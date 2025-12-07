@@ -1,0 +1,425 @@
+sudo dnf update -y
+sudo dnf update && sudo dnf install -y wget curl tar unzip
+
+sudo dnf install java-17-openjdk java-17-openjdk-devel -y
+
+which java
+/usr/bin/java
+
+readlink -f /usr/bin/java
+/usr/lib/jvm/java-17-openjdk-17.0.17.0.10-1.el9.x86_64/bin/java
+
+sudo vi /etc/profile.d/java.sh
+
+export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-17.0.17.0.10-1.el9.x86_64/
+export PATH=$PATH:$JAVA_HOME/bin
+
+source /etc/profile.d/java.sh
+
+echo $JAVA_HOME
+java -version
+
+
+1. Docker & Docker Compose 설치 (Rocky Linux 9.6)
+① Docker 설치
+sudo dnf update -y
+sudo dnf update && sudo dnf install -y wget curl tar unzip git
+
+sudo dnf install -y dnf-plugins-core
+sudo dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo dnf install -y docker-ce docker-ce-cli containerd.io
+
+② Docker 서비스 시작 & 부팅 시 자동 실행
+sudo systemctl start docker
+sudo systemctl enable docker
+
+
+sudo usermod -aG docker gics
+
+③ docker-compose 설치
+
+Rocky 9은 compose-plugin 사용:
+
+sudo dnf install docker-compose-plugin -y
+
+확인:
+docker compose version
+
+🧩 2. Pinpoint Docker Compose 파일 다운로드
+① 설치할 디렉토리 생성
+mkdir ~/pinpoint-docker
+cd ~/pinpoint-docker
+
+docker-compose.yml
+---------------------------------------
+version: "3.8"
+
+networks:
+  pinpoint-net:
+    driver: bridge
+
+volumes:
+  zookeeper-data:
+  hbase-data:
+  kafka-data:
+  mysql-data:
+  pinot-data:
+
+services:
+
+  # ============================================================
+  # 1. ZOOKEEPER
+  # ============================================================
+  pinpoint-zookeeper:
+    image: zookeeper:3.8
+    container_name: pinpoint-zookeeper
+    restart: always
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_MY_ID: 1
+      ZOO_SERVERS: server.1=0.0.0.0:2888:3888;2181
+      ZOO_4LW_COMMANDS_WHITELIST: "*"
+    volumes:
+      - zookeeper-data:/data
+      - zookeeper-data:/datalog
+    networks:
+      - pinpoint-net
+    healthcheck:
+      test: ["CMD", "zkServer.sh", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # 2. HBASE
+  # ============================================================
+  pinpoint-hbase:
+    image: pinpointdocker/pinpoint-hbase:3.0.0
+    container_name: pinpoint-hbase
+    restart: always
+    environment:
+      HBASE_MANAGES_ZK: "false"
+      HBASE_ZOOKEEPER_QUORUM: pinpoint-zookeeper
+      HBASE_ZOOKEEPER_PROPERTY_CLIENTPORT: 2181
+      HBASE_MASTER_INFO_PORT: 16010
+      HBASE_REGIONSERVER_INFO_PORT: 16030
+    ports:
+      - "16000:16000"  # HBase Master
+      - "16010:16010"  # HBase Master Web UI
+      - "16020:16020"  # HBase RegionServer
+      - "16030:16030"  # HBase RegionServer Web UI
+    volumes:
+      - hbase-data:/home/pinpoint/hbase
+      - hbase-data:/home/pinpoint/zookeeper
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/bash", "-c", "echo status | hbase shell -n | grep -q 'active master'"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # ============================================================
+  # 3. Kafka
+  # ============================================================
+  pinpoint-kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: pinpoint-kafka
+    restart: always
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: pinpoint-zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://pinpoint-kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # 4. Pinot (최신 버전 사용 권장)
+  # ============================================================
+  pinpoint-pinot-controller:
+    image: apachepinot/pinot:1.2.0
+    container_name: pinpoint-pinot-controller
+    restart: always
+    command: StartController -zkAddress pinpoint-zookeeper:2181
+    ports:
+      - "9000:9000"
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+    volumes:
+      - pinot-data:/tmp/data
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-zookeeper:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  pinpoint-pinot-broker:
+    image: apachepinot/pinot:1.2.0
+    container_name: pinpoint-pinot-broker
+    restart: always
+    command: StartBroker -zkAddress pinpoint-zookeeper:2181
+    ports:
+      - "8099:8099"
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-pinot-controller:
+        condition: service_healthy
+
+  pinpoint-pinot-server:
+    image: apachepinot/pinot:1.2.0
+    container_name: pinpoint-pinot-server
+    restart: always
+    command: StartServer -zkAddress pinpoint-zookeeper:2181
+    ports:
+      - "8098:8098"
+    environment:
+      JAVA_OPTS: "-Xms512m -Xmx1024m -XX:+UseG1GC"
+    volumes:
+      - pinot-data:/tmp/data
+    networks:
+      - pinpoint-net
+    depends_on:
+      - pinpoint-pinot-broker
+
+  # ============================================================
+  # 5. MySQL
+  # ============================================================
+  pinpoint-mysql:
+    image: mysql:8.0
+    container_name: pinpoint-mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: pinpoint
+      MYSQL_USER: admin
+      MYSQL_PASSWORD: admin
+    ports:
+      - "3306:3306"
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - pinpoint-net
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================
+  # 6. Pinpoint Collector
+  # ============================================================
+  pinpoint-collector:
+    image: pinpointdocker/pinpoint-collector:3.0.2
+    container_name: pinpoint-collector
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: release
+      
+      # HBase 설정
+      HBASE_HOST: pinpoint-hbase
+      HBASE_PORT: 2181
+      
+      # Kafka 설정
+      KAFKA_BOOTSTRAP_SERVERS: pinpoint-kafka:9092
+      
+      # Collector 설정
+      CLUSTER_ENABLE: "false"
+      RECEIVER_GRPC_AGENT_PORT: 9991
+      RECEIVER_GRPC_STAT_PORT: 9992
+      RECEIVER_GRPC_SPAN_PORT: 9993
+      
+      # Pinot 설정 (선택사항)
+      PINOT_JDBC_URL: jdbc:pinot://pinpoint-pinot-broker:8099
+      
+      # 기타 설정
+      LOGGING_LEVEL_ROOT: INFO
+      
+    ports:
+      - "9991:9991"  # agent
+      - "9992:9992"  # stat
+      - "9993:9993"  # span
+      - "9994:9994"  # http agent
+      - "9995:9995"  # http stat
+      - "9996:9996"  # http span
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-hbase:
+        condition: service_healthy
+      pinpoint-kafka:
+        condition: service_healthy
+
+  # ============================================================
+  # 7. Pinpoint Web
+  # ============================================================
+  pinpoint-web:
+    image: pinpointdocker/pinpoint-web:3.0.2
+    container_name: pinpoint-web
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: release
+      
+      # HBase 설정
+      HBASE_HOST: pinpoint-hbase
+      HBASE_PORT: 2181
+      
+      # 클러스터 설정
+      CLUSTER_ENABLE: "false"
+      
+      # MySQL 설정
+      SPRING_DATASOURCE_HIKARI_JDBCURL: jdbc:mysql://pinpoint-mysql:3306/pinpoint?characterEncoding=UTF-8&serverTimezone=UTC
+      SPRING_DATASOURCE_HIKARI_USERNAME: admin
+      SPRING_DATASOURCE_HIKARI_PASSWORD: admin
+      
+      # 관리자 설정
+      ADMIN_PASSWORD: admin
+      
+      # 기타 설정
+      LOGGING_LEVEL_ROOT: INFO
+      CONFIG_SENDUSAGE: "false"
+      
+    ports:
+      - "8080:8080"
+      - "9997:9997"
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-collector:
+        condition: service_started
+      pinpoint-mysql:
+        condition: service_healthy
+
+  # ============================================================
+  # 8. Pinpoint Batch (Alarm)
+  # ============================================================
+  pinpoint-batch:
+    image: pinpointdocker/pinpoint-batch:3.0.2
+    container_name: pinpoint-batch
+    restart: always
+    environment:
+      SPRING_PROFILES_ACTIVE: release,batch
+      
+      # HBase 설정
+      HBASE_HOST: pinpoint-hbase
+      HBASE_PORT: 2181
+      
+      # MySQL 설정
+      SPRING_DATASOURCE_HIKARI_JDBCURL: jdbc:mysql://pinpoint-mysql:3306/pinpoint?characterEncoding=UTF-8&serverTimezone=UTC
+      SPRING_DATASOURCE_HIKARI_USERNAME: admin
+      SPRING_DATASOURCE_HIKARI_PASSWORD: admin
+      
+      # Batch 설정
+      BATCH_ENABLE: "true"
+      BATCH_SERVER_IP: pinpoint-batch
+      
+      # 기타 설정
+      LOGGING_LEVEL_ROOT: INFO
+      
+    networks:
+      - pinpoint-net
+    depends_on:
+      pinpoint-hbase:
+        condition: service_healthy
+      pinpoint-mysql:
+        condition: service_healthy
+
+  # ============================================================
+  # 9. Pinpoint Flink (실시간 처리, 선택사항)
+  # ============================================================
+  # pinpoint-flink-jobmanager:
+  #   image: pinpointdocker/pinpoint-flink:3.0.2
+  #   container_name: pinpoint-flink-jobmanager
+  #   restart: always
+  #   command: jobmanager
+  #   environment:
+  #     SPRING_PROFILES_ACTIVE: release
+  #     HBASE_HOST: pinpoint-hbase
+  #     HBASE_PORT: 2181
+  #   ports:
+  #     - "8081:8081"
+  #   networks:
+  #     - pinpoint-net
+  #   depends_on:
+  #     - pinpoint-hbase
+  #     - pinpoint-kafka
+
+사용 방법
+1. 시작하기
+bash# 모든 서비스 시작
+docker-compose up -d
+
+# 로그 확인
+docker-compose logs -f
+
+# 특정 서비스 로그 확인
+docker-compose logs -f pinpoint-web
+2. 초기화 대기 시간
+
+Zookeeper: 약 10초
+HBase: 약 1-2분 (테이블 생성 포함)
+Kafka: 약 30초
+Pinpoint Collector/Web: HBase 준비 후 약 1분
+
+3. 접속 주소
+
+Pinpoint Web UI: http://localhost:8080
+HBase Master UI: http://localhost:16010
+Pinot Controller UI: http://localhost:9000
+
+4. Agent 연결 설정
+Java 애플리케이션에 다음 옵션 추가:
+bash-javaagent:/path/to/pinpoint-agent/pinpoint-bootstrap.jar
+-Dpinpoint.agentId=your-agent-id
+-Dpinpoint.applicationName=your-app-name
+-Dpinpoint.profiler.profiles.active=release
+-Dpinpoint.collector.ip=localhost
+5. 문제 해결
+bash# 서비스 상태 확인
+docker-compose ps
+
+# HBase 테이블 확인
+docker exec -it pinpoint-hbase hbase shell
+> list
+
+# 모든 서비스 재시작
+docker-compose restart
+
+# 완전히 재시작 (데이터 유지)
+docker-compose down
+docker-compose up -d
+
+# 데이터 포함 완전 삭제
+docker-compose down -v
