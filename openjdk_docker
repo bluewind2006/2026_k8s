@@ -82,7 +82,7 @@ services:
       ZOO_4LW_COMMANDS_WHITELIST: "*"
     volumes:
       - zookeeper-data:/data
-      - zookeeper-data:/datalog
+    #- zookeeper-data:/datalog
     networks:
       - pinpoint-net
     healthcheck:
@@ -90,7 +90,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+      start_period: 30s
   # ============================================================
   # 2. HBASE
   # ============================================================
@@ -98,6 +98,7 @@ services:
     image: pinpointdocker/pinpoint-hbase:3.0.0
     container_name: pinpoint-hbase
     restart: always
+    hostname: zoo1
     environment:
       HBASE_MANAGES_ZK: "false"
       HBASE_ZOOKEEPER_QUORUM: pinpoint-zookeeper
