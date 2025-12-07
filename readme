@@ -1,4 +1,6 @@
 readme
+https://m.blog.naver.com/itcode21/222882586895
+
 C:\>cd C:\Program Files (x86)\Microsoft Office\Office16
 for /f %x in ('dir /b ..\root\Licenses16\ProPlus2021VL_KMS*.xrm-ms') do cscript ospp.vbs /inslic:"..\root\Licenses16\%x"
 
