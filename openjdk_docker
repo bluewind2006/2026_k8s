@@ -45,6 +45,53 @@ sudo dnf install docker-compose-plugin -y
 확인:
 docker compose version
 
+
+
+
+# 임시로 Permissive 모드로 변경 (테스트용)
+sudo setenforce 0
+
+
+# logs 디렉토리가 호스트에 마운트되어 있다면 권한 수정
+sudo chmod 777 ./logs
+# 또는
+sudo chown -R 1000:1000 ./logs
+
+
+pinpoint-collector:
+  volumes:
+    # 로그 볼륨을 명시적으로 제거하거나
+    # - ./logs:/logs  # 이 줄을 주석 처리
+    
+    # 또는 tmpfs 사용 (임시 해결)
+    - type: tmpfs
+      target: /logs
+
+
+
+# ========================================
+# Java 메모리 설정
+# ========================================
+
+# Pinpoint Web 메모리 설정 (기본값: -Xms512m -Xmx2048m -XX:MaxMetaspaceSize=512m)
+# Metric 모드에서는 최소 2GB 이상 권장
+PINPOINT_WEB_JAVA_OPTS=-Xms1g -Xmx4g -XX:MaxMetaspaceSize=512m -XX:+UseG1GC
+
+# Pinpoint Collector 메모리 설정 (기본값: -Xms512m -Xmx2048m -XX:MaxMetaspaceSize=512m)
+# Metric 모드에서는 최소 2GB 이상 권장
+PINPOINT_COLLECTOR_JAVA_OPTS=-Xms1g -Xmx4g -XX:MaxMetaspaceSize=512m -XX:+UseG1GC
+
+# Pinpoint Batch 메모리 설정 (기본값: -Xms512m -Xmx1024m -XX:MaxMetaspaceSize=256m)
+PINPOINT_BATCH_JAVA_OPTS=-Xms512m -Xmx2g -XX:MaxMetaspaceSize=512m -XX:+UseG1GC
+
+# Flink JobManager 메모리 설정 (기본값: 1024m)
+FLINK_JOBMANAGER_PROPERTIES=jobmanager.memory.process.size=2048m
+
+# Flink TaskManager 메모리 설정 (기본값: 1024m)
+FLINK_TASKMANAGER_PROPERTIES=taskmanager.memory.process.size=2048m
+
+
+
 🧩 2. Pinpoint Docker Compose 파일 다운로드
 ① 설치할 디렉토리 생성
 mkdir ~/pinpoint-docker
