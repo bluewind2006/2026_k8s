@@ -1,1 +1,27 @@
 readme
+// 기존 코드 그대로 사용 가능! request를 전달할 필요 없음
+if (fromSys != null && !fromSys.isEmpty() && !"MNGR".equals(fromSys)) { 
+    if ("dev".equals(activeProfile)) { 
+        response.sendRedirect("https://dev.nobreak.com/mainComPage.do"); 
+    } else if ("test".equals(activeProfile)) { 
+        response.sendRedirect("https://test.nobreak.com/mainComPage.do"); 
+    } else if ("prod".equals(activeProfile)) { 
+        // 자동으로 현재 요청 도메인을 감지하여 리다이렉트
+        String redirectUrl = WebProperties.getRapWebUrl() + "/mainComPage.do";
+        response.sendRedirect(redirectUrl); 
+    } else { 
+        response.sendRedirect("/mainComPage.do"); 
+    } 
+} else { 
+    if ("dev".equals(activeProfile)) { 
+        response.sendRedirect("https://dev.nobreak.com/main.do"); 
+    } else if ("test".equals(activeProfile)) { 
+        response.sendRedirect("https://test.nobreak.com/main.do"); 
+    } else if ("prod".equals(activeProfile)) { 
+        // 자동으로 현재 요청 도메인을 감지하여 리다이렉트
+        String redirectUrl = WebProperties.getRapWebUrl() + "/main.do";
+        response.sendRedirect(redirectUrl); 
+    } else { 
+        response.sendRedirect("/main.do"); 
+    } 
+}
