@@ -33,3 +33,169 @@ if (fromSys != null && !fromSys.isEmpty() && !"MNGR".equals(fromSys)) {
         response.sendRedirect("/main.do"); 
     } 
 }
+
+
+
+
+@Slf4j 
+@Getter 
+@ConfigurationProperties 
+public class WebProperties { 
+    @Value("${spring.profiles.active}") 
+    private String activeProfile; 
+    
+    private final String domain; 
+    private final HashMap<String, Object> domains; // List 또는 String 받을 수 있도록
+    
+    private static WebProperties getInstance() { 
+        return BeanUtil.getBean(WebProperties.class);
+    } 
+    
+    public static String getServerEnv() { 
+        return getInstance().activeProfile; 
+    } 
+    
+    /**
+     * 현재 요청에서 접속한 도메인에 맞는 rap-web URL 반환
+     */
+    public static String getRapWebUrl() { 
+        try {
+            // RequestContextHolder를 통해 현재 요청의 HttpServletRequest 가져오기
+            ServletRequestAttributes attributes = 
+                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            
+            if (attributes != null) {
+                HttpServletRequest request = attributes.getRequest();
+                
+                String serverName = request.getServerName();
+                String scheme = request.getScheme();
+                int serverPort = request.getServerPort();
+                
+                // 현재 요청의 전체 도메인 URL 구성
+                String currentDomain = scheme + "://" + serverName;
+                if ((scheme.equals("http") && serverPort != 80) || 
+                    (scheme.equals("https") && serverPort != 443)) {
+                    currentDomain += ":" + serverPort;
+                }
+                
+                log.debug("Current request domain: {}", currentDomain);
+                
+                // rap-web 도메인 리스트에서 현재 도메인과 매칭
+                Object rapWebValue = getInstance().domains.get("rap-web");
+                
+                if (rapWebValue instanceof List) {
+                    List<String> rapWebUrls = (List<String>) rapWebValue;
+                    
+                    for (String configuredDomain : rapWebUrls) {
+                        // 완전 일치 또는 호스트명 일치 확인
+                        if (currentDomain.equals(configuredDomain) || 
+                            serverName.equals(extractHostname(configuredDomain))) {
+                            log.debug("Matched to: {}", configuredDomain);
+                            return configuredDomain;
+                        }
+                    }
+                } else if (rapWebValue instanceof String) {
+                    // 단일 문자열인 경우 (하위 호환성)
+                    return (String) rapWebValue;
+                }
+            }
+        } catch (Exception e) {
+            log.error("Error getting rap-web URL from request: {}", e.getMessage());
+        }
+        
+        // 여기까지 오면 매칭 실패 - 에러 로그
+        log.error("Could not match current domain to any configured rap-web domain");
+        return "";
+    }
+    
+    /**
+     * URL에서 호스트명 추출
+     */
+    private static String extractHostname(String url) {
+        try {
+            return url.replaceAll("https?://", "").split(":")[0];
+        } catch (Exception e) {
+            return url;
+        }
+    }
+    
+    public static String getRapSearchUrl() { 
+        return getStringValue("rap-src");
+    } 
+    
+    public static String getRapDomain() { 
+        return getInstance().domain;
+    }
+    
+    public static String getSystemUrl(String systemCode) { 
+        if(NullUtil.isNone(systemCode) || RapWebConstants.SYSTEM_CODE_ETC.equals(systemCode)) 
+            return ""; 
+        return getStringValue(systemCode);
+    }
+    
+    /**
+     * domains에서 String 값을 가져오는 헬퍼 메서드
+     */
+    private static String getStringValue(String key) {
+        Object value = getInstance().domains.get(key);
+        
+        if (value instanceof List) {
+            List<String> list = (List<String>) value;
+            return list.isEmpty() ? "" : list.get(0);
+        } else if (value instanceof String) {
+            return (String) value;
+        }
+        
+        return "";
+    }
+    
+    public String getRapWebDomain() { 
+        return getRapWebUrl();
+    }
+    
+    public String getDomain(String systemCode) { 
+        if(NullUtil.isNone(systemCode) || RapWebConstants.SYSTEM_CODE_ETC.equals(systemCode)) 
+            return ""; 
+        return getStringValue(systemCode);
+    }
+    
+    public WebProperties(String domain, String adminIds, String[] adminMails, 
+                        HashMap<String, Object> domains, HashMap<String, String> trackings, 
+                        String ssoYn, String ssoNlsUrl, String ssoNdUrl) {
+        this.domain = domain; 
+        this.domains = domains;
+    }
+    
+    @PostConstruct 
+    public void init() { 
+        log.info("=== INIT RapWebProperties ===");
+        log.info("===== WebProperties: env: {}", this.activeProfile); 
+        log.info("===== WebProperties: domain: {}", this.domain);
+        log.info("===== WebProperties: domains: {}", this.domains);
+    } 
+}
+
+if (fromSys != null && !fromSys.isEmpty() && !"MNGR".equals(fromSys)) { 
+    if ("dev".equals(activeProfile)) { 
+        response.sendRedirect("https://dev.nobreak.com/mainComPage.do"); 
+    } else if ("test".equals(activeProfile)) { 
+        response.sendRedirect("https://test.nobreak.com/mainComPage.do"); 
+    } else if ("prod".equals(activeProfile)) { 
+        String redirectUrl = WebProperties.getRapWebUrl() + "/mainComPage.do";
+        response.sendRedirect(redirectUrl); 
+    } else { 
+        response.sendRedirect("/mainComPage.do"); 
+    } 
+} else { 
+    if ("dev".equals(activeProfile)) { 
+        response.sendRedirect("https://dev.nobreak.com/main.do"); 
+    } else if ("test".equals(activeProfile)) { 
+        response.sendRedirect("https://test.nobreak.com/main.do"); 
+    } else if ("prod".equals(activeProfile)) { 
+        String redirectUrl = WebProperties.getRapWebUrl() + "/main.do";
+        response.sendRedirect(redirectUrl); 
+    } else { 
+        response.sendRedirect("/main.do"); 
+    } 
+}
+
