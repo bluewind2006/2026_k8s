@@ -1,2 +1,393 @@
 
 readme
+
+
+1.  당신은 인프라 전문가 입니다.
+2. azure 클라우드를 사용합니다.
+- 4 vCPU, 16G memory
+3. springboot3.x, 내장된 tomcat server를 사용합니다.
+4. 현재 환경에 맞는 최적화된 JVM 설정을 제공해 주세요
+
+
+1. 전제 조건에 대한 인프라 관점 판단
+VM 스펙 해석
+
+vCPU: 4 Core
+
+Memory: 16 GB
+
+Spring Boot 3.x → Java 17 이상
+
+Embedded Tomcat → Thread 기반 동시성
+
+Azure VM 특성:
+
+CPU burst 없음 (일반 VM 기준)
+
+메모리 OOM 발생 시 즉시 프로세스 Kill 가능
+
+컨테이너가 아니라 VM 단독 JVM 실행 → Heap을 넉넉히 사용 가능
+
+2. Heap 메모리 설계 (가장 중요)
+기본 원칙
+
+전체 RAM의 50~60%만 Heap
+
+나머지는:
+
+Metaspace
+
+Thread Stack
+
+Direct Memory (NIO, Netty 등)
+
+OS Page Cache
+
+Azure Agent 영역
+
+권장 Heap 크기
+총 메모리: 16GB
+Heap: 8GB ~ 10GB
+
+
+운영 안정성을 최우선으로 하면 8GB 권장
+
+3. Garbage Collector 선택 (Spring Boot 3.x 기준)
+권장 GC: G1GC (기본값이지만 명시 권장)
+
+이유:
+
+대용량 Heap에 안정적
+
+Pause Time 제어 가능
+
+웹 서버 워크로드에 적합
+
+CMS는 Java 17에서 제거됨
+
+ZGC/Shenandoah는 튜닝 난이도 ↑ (4 vCPU에서는 이점 적음)
+
+4. 최적화된 JVM 옵션 (운영용)
+최종 권장 JVM 옵션 (Strongly Recommended)
+-Xms8g
+-Xmx8g
+
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:InitiatingHeapOccupancyPercent=45
+
+-XX:+ParallelRefProcEnabled
+-XX:+UseStringDeduplication
+
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=/var/log/jvm/heapdump.hprof
+
+-XX:+ExitOnOutOfMemoryError
+
+-XX:MetaspaceSize=256m
+-XX:MaxMetaspaceSize=512m
+
+-Xss512k
+
+-Dfile.encoding=UTF-8
+-Djava.security.egd=file:/dev/urandom
+
+5. 옵션별 핵심 설명 (왜 필요한가)
+Heap 관련
+옵션	설명
+-Xms8g -Xmx8g	Heap 고정 → Full GC 시 리사이즈 비용 제거
+InitiatingHeapOccupancyPercent=45	Heap 45% 차면 GC 시작 → Old 영역 압박 방지
+GC 성능
+옵션	효과
+MaxGCPauseMillis=200	웹 요청 latency 안정화
+ParallelRefProcEnabled	Reference 처리 병렬화
+UseStringDeduplication	Spring/JSON 문자열 메모리 절감
+OOM 대응
+옵션	이유
+HeapDumpOnOutOfMemoryError	장애 원인 분석 필수
+ExitOnOutOfMemoryError	비정상 상태에서 살아남는 것 방지
+
+Azure에서는 비정상 JVM이 살아있으면 더 위험합니다.
+
+Thread Stack
+옵션	설명
+-Xss512k	Tomcat thread 수가 많아도 Stack 메모리 절감
+
+Tomcat 기본 최대 thread(200 기준)에서도 안전
+
+Metaspace
+옵션	이유
+MaxMetaspaceSize=512m	ClassLoader 누수 방어
+MetaspaceSize=256m	잦은 Full GC 방지
+6. Spring Boot + Tomcat 추가 권장 설정 (중요)
+application.yml (서버 튜닝)
+server:
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 20
+    accept-count: 100
+    max-connections: 8192
+
+
+4 vCPU 기준:
+
+max threads 200 이상은 의미 없음
+
+CPU saturation 방지 목적
+
+7. GC 로그 (운영 환경 필수)
+GC 로그 옵션 (Java 17)
+-Xlog:gc*,gc+heap=info,gc+age=trace:file=/var/log/jvm/gc.log:time,uptime,level,tags
+
+
+→ 장애 시 GC 패턴 분석 가능
+
+8. 만약 트래픽이 높은 서비스라면 (선택)
+응답 지연 민감 서비스
+-XX:MaxGCPauseMillis=100
+
+메모리 압박 심할 경우
+-XX:+AlwaysPreTouch
+
+
+(단, 기동 시간 증가)
+
+9. 요약 – 가장 추천하는 구성
+
+Azure VM (4 vCPU / 16GB)
+Spring Boot 3.x / Embedded Tomcat
+
+Heap: 8GB 고정
+
+GC: G1GC
+
+Pause 목표: 200ms
+
+Thread stack 축소
+
+OOM 즉시 종료 + HeapDump
+
+GC 로그 활성화
+
+전체 구조 한 눈에 보기
+Windows Service (NSSM)
+ └─ java.exe
+     ├─ JVM Options (-Xms, -Xmx, GC ...)
+     └─ -jar myapp.war
+         └─ Embedded Tomcat
+
+3. 준비 사항 (필수)
+
+JDK 17 이상 설치
+
+예: C:\Program Files\Java\jdk-17
+
+Spring Boot WAR 파일
+
+예: C:\app\myapp.war
+
+로그 디렉터리 생성
+
+mkdir C:\logs\jvm
+
+
+NSSM 설치
+
+https://nssm.cc/download
+
+예: C:\nssm\nssm.exe
+
+4. NSSM으로 서비스 등록 (핵심 단계)
+4-1. 서비스 생성
+C:\nssm\nssm.exe install MySpringBootApp
+
+
+GUI 창이 열립니다.
+
+4-2. Application 탭 (가장 중요)
+Path
+C:\Program Files\Java\jdk-17\bin\java.exe
+
+Arguments
+
+👉 여기에 JVM 옵션 + -jar WAR 경로를 모두 넣음
+
+-Xms8g
+-Xmx8g
+-XX:+UseG1GC
+-XX:MaxGCPauseMillis=200
+-XX:InitiatingHeapOccupancyPercent=45
+-XX:+ParallelRefProcEnabled
+-XX:+UseStringDeduplication
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:HeapDumpPath=C:\logs\jvm\heapdump.hprof
+-XX:+ExitOnOutOfMemoryError
+-XX:MetaspaceSize=256m
+-XX:MaxMetaspaceSize=512m
+-Xss512k
+-Xlog:gc*,gc+heap=info:file=C:\logs\jvm\gc.log:time,uptime,level,tags
+-Dfile.encoding=UTF-8
+-jar C:\app\myapp.war
+
+
+📌 주의
+
+한 줄로 붙여도 되고, 공백으로 구분되면 됨
+
+-jar는 반드시 마지막
+
+java.exe 뒤에 바로 들어간다고 생각하면 됨
+
+Startup directory
+C:\app
+
+
+(상대 경로 사용 시 중요)
+
+5. Details 탭 (권장 설정)
+항목	값
+Display name	MySpringBootApp
+Startup type	Automatic
+Description	Spring Boot Embedded Tomcat Service
+6. Exit actions 탭 (운영 안정성 핵심)
+설정
+
+Exit action: Restart
+
+Delay: 5000 ms
+
+Restart throttle: 3
+
+Reset throttle: 60000
+
+의미
+
+OOM → JVM 종료
+
+NSSM이 5초 후 자동 재기동
+
+무한 재시작 방지
+
+7. I/O 탭 (로그 분리 – 매우 중요)
+Output (stdout)
+C:\logs\app\stdout.log
+
+Error (stderr)
+C:\logs\app\stderr.log
+
+
+👉 Spring Boot 로그 + JVM 오류 로그 분리 가능
+👉 콘솔 로그 유실 방지
+
+8. 서비스 저장 & 실행
+nssm start MySpringBootApp
+
+
+또는
+
+services.msc
+
+
+에서 시작
+
+9. 정상 적용 확인 방법 (반드시 확인)
+9-1. 프로세스 확인
+jps -l
+
+9-2. JVM 옵션 확인
+jcmd <PID> VM.flags
+
+9-3. Heap 확인
+jcmd <PID> GC.heap_info
+
+9-4. GC 로그 확인
+C:\logs\jvm\gc.log
+
+10. NSSM 방식에서 자주 발생하는 실수 TOP 5
+
+❌ Arguments에 java를 다시 쓰는 경우
+❌ -jar를 JVM 옵션 중간에 넣는 경우
+❌ HeapDump 경로 미생성
+❌ 서비스 계정 권한 부족
+❌ Xmx 설정 없이 운영
+
+11. 운영 관점에서 NSSM 방식의 장점
+항목	이유
+안정성	OOM 시 자동 재시작
+명확성	JVM 옵션이 한 곳에 모임
+배포 편의	WAR 교체만으로 배포
+Windows 친화	서비스 관리자와 완벽 호환
+
+
+clau
+
+Azure 클라우드 환경(4 vCPU, 16GB 메모리)에서 Spring Boot 3.x 애플리케이션을 위한 최적화된 JVM 설정을 제공하겠습니다.
+권장 JVM 설정
+bashJAVA_OPTS="
+  -Xms8g
+  -Xmx12g
+  -XX:+UseG1GC
+  -XX:MaxGCPauseMillis=200
+  -XX:ParallelGCThreads=4
+  -XX:ConcGCThreads=2
+  -XX:InitiatingHeapOccupancyPercent=45
+  -XX:G1ReservePercent=10
+  -XX:G1HeapRegionSize=16m
+  -XX:+UseStringDeduplication
+  -XX:MaxMetaspaceSize=512m
+  -XX:MetaspaceSize=256m
+  -XX:+HeapDumpOnOutOfMemoryError
+  -XX:HeapDumpPath=/var/log/app/heapdump.hprof
+  -XX:+ExitOnOutOfMemoryError
+  -Djava.security.egd=file:/dev/./urandom
+  -Dserver.tomcat.threads.max=200
+  -Dserver.tomcat.threads.min-spare=20
+  -Dserver.tomcat.accept-count=100
+  -Dserver.tomcat.max-connections=10000
+"
+주요 설정 설명
+메모리 할당
+
+Xms: 8GB (초기 힙), Xmx: 12GB (최대 힙) - 16GB 중 OS와 다른 프로세스를 위해 약 4GB 여유 확보
+초기 힙을 충분히 크게 설정하여 초기 GC 빈도 감소
+
+GC 설정 (G1GC)
+
+G1GC는 대용량 힙에 적합하며 예측 가능한 pause time 제공
+MaxGCPauseMillis: 200ms로 설정하여 응답성 유지
+ParallelGCThreads: 4 (vCPU 수와 동일)
+InitiatingHeapOccupancyPercent: 45%에서 GC 시작
+
+Metaspace
+
+MaxMetaspaceSize: 512MB (Spring Boot의 클래스 로딩 고려)
+Spring Boot 3.x와 현대적인 프레임워크에 충분한 크기
+
+Tomcat 설정
+
+max threads: 200 (일반적인 웹 애플리케이션에 적합)
+min-spare: 20 (기본 스레드 풀 유지)
+max-connections: 10000 (동시 연결 처리)
+
+모니터링을 위한 추가 옵션
+bashJAVA_OPTS="$JAVA_OPTS
+  -XX:+PrintGCDetails
+  -XX:+PrintGCDateStamps
+  -Xlog:gc*:file=/var/log/app/gc.log:time,uptime:filecount=5,filesize=100m
+  -Dcom.sun.management.jmxremote
+  -Dcom.sun.management.jmxremote.port=9010
+  -Dcom.sun.management.jmxremote.authenticate=false
+  -Dcom.sun.management.jmxremote.ssl=false
+"
+application.properties 추가 설정
+properties# Tomcat 최적화
+server.tomcat.connection-timeout=20000
+server.tomcat.keep-alive-timeout=60000
+server.tomcat.max-swallow-size=2MB
+
+# Thread pool
+spring.task.execution.pool.core-size=10
+spring.task.execution.pool.max-size=50
+spring.task.execution.pool.queue-capacity=100
+이 설정은 일반적인 웹 애플리케이션 기준이며, 실제 애플리케이션의 부하 패턴과 요구사항에 따라 모니터링 후 조정이 필요합니다. Azure Monitor나 Application Insights를 통해 메모리 사용량, GC 빈도, 응답 시간을 지속적으로 확인하시기 바랍니다.
