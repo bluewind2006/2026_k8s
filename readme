@@ -43,3 +43,8 @@ protected void doFilterInternal(HttpServletRequest request,
     // 그 외 요청
     filterChain.doFilter(wrappedRequest, response);
 }
+
+
+
+HttpServletRequest request = attributes.getRequest();
+log.info("  request class: {}", request.getClass().getName());
