@@ -1,3 +1,45 @@
 
 read
-e
+@Override
+protected void doFilterInternal(HttpServletRequest request,
+                                HttpServletResponse response,
+                                FilterChain filterChain)
+        throws ServletException, IOException {
+
+    String uri = request.getRequestURI();
+
+    // 1. 정적 리소스 제외 (Wrapper 없이 통과)
+    if (isStaticResource(uri)) {
+        filterChain.doFilter(request, response);
+        return;
+    }
+
+    // 2. 나머지 모든 요청은 XssRequestWrapper 적용
+    //    GET 파라미터 없음이어도 Wrapper를 씌워야
+    //    getServerName(), getScheme(), getServerPort()가 올바르게 동작
+    XssRequestWrapper wrappedRequest = new XssRequestWrapper(request);
+
+    String method = request.getMethod();
+    String contentType = request.getContentType();
+
+    // GET + 파라미터 없음 → XSS 검사 불필요하지만 Wrapper는 유지
+    if ("GET".equalsIgnoreCase(method) && request.getParameterMap().isEmpty()) {
+        filterChain.doFilter(wrappedRequest, response);
+        return;
+    }
+
+    // JSON은 Jackson이 처리
+    if (contentType != null && contentType.contains("application/json")) {
+        filterChain.doFilter(wrappedRequest, response);
+        return;
+    }
+
+    // Multipart 요청
+    if (contentType != null && contentType.startsWith("multipart/")) {
+        filterChain.doFilter(wrappedRequest, response);
+        return;
+    }
+
+    // 그 외 요청
+    filterChain.doFilter(wrappedRequest, response);
+}
