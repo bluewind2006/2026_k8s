@@ -149,3 +149,6 @@ public class Payload {
         return true;
     }
 }
+
+
+C:\workspace>certutil -encode Payload.class output.b64
