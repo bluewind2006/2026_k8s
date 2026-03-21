@@ -1,0 +1,67 @@
+https://github.com/hasherezade hollows_hunter, MalUnpack, PE-sieve
+
+
+1. PE-sieve
+→ 단일 프로세스 메모리 분석 + 악성 코드 덤프 도구
+[기능]
+-Process Hollowing 탐지
+-DLL Injection 탐지
+-Shellcode 탐지
+-Hook / Patch 탐지
+-메모리에서 PE 파일 복구
+→ 메모리 기반 악성코드 전부 커버
+
+[기본 사용법]
+pe-sieve.exe /pid <PID>
+pe-sieve.exe /pid 1234
+
+[주요 옵션]
+/imp 1      → IAT 복구
+/shellc     → shellcode 탐지
+/hooks      → hook 탐지
+/dir out    → 결과 저장 경로
+
+2. Hollows_Hunter
+→ 전체 시스템 프로세스 자동 스캔 도구
+
+[핵심]
+→ 내부적으로 PE-sieve 사용
+
+[기능]
+전체 프로세스 스캔
+Process Hollowing 탐지
+자동 덤프
+지속 모니터링 가능
+→ 메모리에서 악성코드 자동 추출
+
+[기본 사용법]
+hollows_hunter.exe
+→ 전체 프로세스 스캔
+
+[고급 옵션]
+/hooks      → hook 탐지 활성화
+/shellc     → shellcode 탐지
+/data       → 비실행 영역 분석
+/loop       → 지속 모니터링
+/etw        → 이벤트 기반 감시
+
+
+3. MalUnpack
+→ 자동 악성코드 언패킹 전용 도구
+
+[핵심 기능]
+실행파일 자동 실행
+메모리에서 unpack 시점 감지
+payload 자동 dump
+child process 추적
+→ 자동 언패킹 최적화 도구
+
+정리
+1) 이미 실행된 악성코드 분석
+→ PE-sieve
+
+2) 감염된 시스템 조사
+→ Hollows_Hunter
+
+3) packed malware 분석
+→ MalUnpack
